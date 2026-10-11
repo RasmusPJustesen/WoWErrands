@@ -2,7 +2,7 @@
 ## Title: WoWErrands
 ## Notes: Zone errands, popup checklist and native objective tracker category for WoW Forever.
 ## Author: Community
-## Version: 2.0.0
+## Version: 2.0.1
 ## SavedVariablesPerCharacter: WoWErrandsDB
 ## OptionalDeps: Spoken_Zones, Blizzard_ObjectiveTracker
 ## IconTexture: Interface\AddOns\WoWErrands\icon

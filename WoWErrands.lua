@@ -104,20 +104,164 @@ end
 local updateAll
 
 local function buildPopup()
-    popup = nativeFrame("WoWErrandsPopup", 365, 330)
-    if popup.TitleText then popup.TitleText:SetText("Zone Errands") end
-    popup.zone = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    popup.zone:SetPoint("TOPLEFT", 23, -35)
-    popup.zone:SetTextColor(0.25, 0.16, 0.08)
-    popup.zone:SetShadowColor(0, 0, 0, 0)
-    popup.help = popup:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    popup.help:SetPoint("TOPLEFT", popup.zone, "BOTTOMLEFT", 0, -6)
+    local ART = "Interface\\AddOns\\Spoken_Zones\\Textures\\Art\\"
+    local COPIES = {
+        ["QuestDetailsBackgrounds"] = { file = ART .. "QuestDetailsBackgrounds", u = 0.560547, v = 0.90625 },
+        ["spellbook-list-backplate"] = { file = ART .. "spellbook-list-backplate", u = 0.617188, v = 0.828125 },
+        ["spellbook-divider"] = { file = ART .. "spellbook-divider", u = 0.641602, v = 0.6875 },
+        ["questlog-frame-filigree"] = { file = ART .. "questlog-frame-filigree", u = 0.75, v = 0.59375 },
+    }
+    local function spokenArt()
+        return _G.SpokenZones and _G.SpokenZones.Art
+    end
+    local function artCopy(name)
+        local art = spokenArt()
+        return (art and art.COPIES and art.COPIES[name]) or COPIES[name]
+    end
+    local function unsnap(texture)
+        if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
+        if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
+    end
+    local function ink(font, r, g, b)
+        local art = spokenArt()
+        local original = art and art.INK
+        if original then
+            r, g, b = r or original[1], g or original[2], b or original[3]
+        elseif SPELLBOOK_FONT_COLOR and SPELLBOOK_FONT_COLOR.GetRGB then
+            local a, c, d = SPELLBOOK_FONT_COLOR:GetRGB()
+            r, g, b = r or a, g or c, b or d
+        end
+        font:SetTextColor(r or 0.25, g or 0.16, b or 0.08, 1)
+        font:SetShadowColor(0, 0, 0, 0)
+    end
+
+    popup = CreateFrame("Frame", "WoWErrandsPopup", UIParent, "DefaultPanelFlatTemplate")
+    popup:SetSize(430, 390)
+    popup:SetPoint("CENTER")
+    popup:SetMovable(true)
+    popup:EnableMouse(true)
+    popup:RegisterForDrag("LeftButton")
+    popup:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    popup:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    popup:SetClampedToScreen(true)
+    popup:SetTitle("Zone Errands")
+
+    local close = CreateFrame("Button", nil, popup, "UIPanelCloseButtonDefaultAnchors")
+    close:SetScript("OnClick", function() popup:Hide() end)
+    popup.close = close
+
+    local holder = CreateFrame("Frame", nil, popup)
+    holder:SetPoint("TOPLEFT", popup, "TOPLEFT", 7, -25)
+    holder:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -5, 6)
+    popup.holder = holder
+
+    local page = CreateFrame("Frame", nil, holder)
+    page:SetAllPoints()
+    popup.page = page
+
+    local background = page:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints()
+    local art = spokenArt()
+    local copy = art and art.COPIES and art.COPIES["QuestDetailsBackgrounds"]
+    if copy then
+        background:SetTexture(copy.file)
+        background:SetTexCoord(copy.leftTexCoord, copy.rightTexCoord, copy.topTexCoord, copy.bottomTexCoord)
+    else
+        local hasAtlas = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("QuestDetailsBackgrounds")
+        if hasAtlas and background.SetAtlas then
+            background:SetAtlas("QuestDetailsBackgrounds")
+        else
+            background:SetTexture("Interface\\AddOns\\WoWErrands\\parchment")
+        end
+    end
+    unsnap(background)
+
+    local backplate = page:CreateTexture(nil, "BORDER")
+    local backInfo = artCopy("spellbook-list-backplate")
+    if backInfo then
+        local left = backInfo.leftTexCoord or 0
+        local right = backInfo.rightTexCoord or backInfo.u
+        local top = backInfo.topTexCoord or 0
+        local bottom = backInfo.bottomTexCoord or backInfo.v
+        backplate:SetTexture(backInfo.file)
+        backplate:SetHeight(80)
+        backplate:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)
+        backplate:SetAlpha(0.55)
+        local function fitBackplate()
+            local whole, crop = 300, 40
+            local shown = math.min(whole - crop, math.max(0, page:GetWidth() or 0))
+            backplate:SetWidth(shown)
+            backplate:SetTexCoord(left + (right-left)*crop/whole,
+                left + (right-left)*(crop+shown)/whole, top, bottom)
+        end
+        page:HookScript("OnSizeChanged", fitBackplate)
+        fitBackplate()
+    end
+
+    local rim = CreateFrame("Frame", nil, holder)
+    rim:SetPoint("TOPLEFT", holder, "TOPLEFT", -2, 3)
+    rim:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", 2, -3)
+    rim:SetFrameLevel(holder:GetFrameLevel() + 12)
+    rim:EnableMouse(false)
+    if art and art.NineSlice then
+        rim.border = art.NineSlice(rim, "questlog-frame", "OVERLAY")
+    end
+    local filigree = rim:CreateTexture(nil, "OVERLAY", nil, 1)
+    if art and art.Atlas then
+        art.Atlas(filigree, "questlog-frame-filigree", true)
+    else
+        local info = artCopy("questlog-frame-filigree")
+        if info then
+            filigree:SetTexture(info.file)
+            filigree:SetSize(48, 19)
+            filigree:SetTexCoord(0, info.u, 0, info.v)
+        end
+    end
+    filigree:SetPoint("TOP", rim, "TOP", 0, 1)
+
+    popup.zone = page:CreateFontString(nil, "ARTWORK", _G.QuestTitleFont and "QuestTitleFont" or "GameFontNormalLarge")
+    local fontFile = _G.QuestTitleFont and _G.QuestTitleFont.GetFont and _G.QuestTitleFont:GetFont()
+    if fontFile then popup.zone:SetFont(fontFile, 20, "") end
+    popup.zone:SetPoint("TOPLEFT", page, "TOPLEFT", 24, -28)
+    popup.zone:SetPoint("RIGHT", page, "RIGHT", -24, 0)
+    popup.zone:SetJustifyH("LEFT")
+    popup.zone:SetWordWrap(false)
+    if popup.zone.SetMaxLines then popup.zone:SetMaxLines(1) end
+    ink(popup.zone)
+
+    popup.help = page:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    popup.help:SetPoint("TOPLEFT", popup.zone, "BOTTOMLEFT", 0, -2)
+    popup.help:SetPoint("RIGHT", page, "RIGHT", -24, 0)
+    popup.help:SetHeight(16)
+    popup.help:SetJustifyH("LEFT")
     popup.help:SetText("Things to do before leaving")
-    popup.help:SetTextColor(0.38, 0.25, 0.12)
-    popup.help:SetShadowColor(0, 0, 0, 0)
+    ink(popup.help)
+
+    local divider = page:CreateTexture(nil, "ARTWORK")
+    divider:SetPoint("TOPLEFT", popup.help, "BOTTOMLEFT", -6, -10)
+    divider:SetHeight(11)
+    local dividerInfo = artCopy("spellbook-divider")
+    if dividerInfo then
+        divider:SetTexture(dividerInfo.file)
+        local left = dividerInfo.leftTexCoord or 0
+        local right = dividerInfo.rightTexCoord or dividerInfo.u
+        local top = dividerInfo.topTexCoord or 0
+        local bottom = dividerInfo.bottomTexCoord or dividerInfo.v
+        local function fitDivider()
+            local visible = math.min(657, math.max(1, (page:GetWidth() or 0) - 18 - 28))
+            divider:SetWidth(visible)
+            divider:SetTexCoord(left, left + (right - left) * visible/657, top, bottom)
+        end
+        page:HookScript("OnSizeChanged", fitDivider)
+        fitDivider()
+    else
+        divider:SetColorTexture(0.55, 0.38, 0.2, 0.65)
+        divider:SetPoint("RIGHT", page, "RIGHT", -28, 0)
+    end
+
     for i = 1, MAX_ROWS do
-        local row = check(popup, 315)
-        row:SetPoint("TOPLEFT", 20, -75 - (i - 1) * 26)
+        local row = check(page, 335)
+        row:SetPoint("TOPLEFT", page, "TOPLEFT", 24, -108 - (i - 1) * 28)
         row.label:SetTextColor(0.25, 0.16, 0.08)
         row.label:SetShadowColor(0, 0, 0, 0)
         row:SetScript("OnClick", function(self)
@@ -129,19 +273,28 @@ local function buildPopup()
         end)
         rows[i] = row
     end
-    popup.more = popup:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    popup.more:SetPoint("TOPLEFT", 24, -284)
-    popup.more:SetTextColor(0.38, 0.25, 0.12)
-    local edit = button(popup, "Manage errands", 135, 23)
-    edit:SetPoint("BOTTOMRIGHT", -14, 12)
-    edit:SetScript("OnClick", function() popup:Hide(); if WorldMapFrame and WorldMapFrame:IsShown() then
-        if mapPanel then mapPanel:Show() end
-    elseif ToggleWorldMap then ToggleWorldMap() elseif WorldMapFrame then WorldMapFrame:Show() end end)
-    popup.empty = popup:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    popup.empty:SetPoint("TOPLEFT", 25, -82)
+
+    popup.empty = page:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    popup.empty:SetPoint("TOPLEFT", page, "TOPLEFT", 28, -110)
     popup.empty:SetText("All errands completed!")
-    popup.empty:SetTextColor(0.25, 0.16, 0.08)
-    popup.empty:SetShadowColor(0, 0, 0, 0)
+    ink(popup.empty)
+
+    popup.more = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    popup.more:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 28, 36)
+    ink(popup.more, 0.38, 0.25, 0.12)
+
+    local edit = button(page, "Manage errands", 135, 23)
+    edit:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 18)
+    edit:SetScript("OnClick", function()
+        popup:Hide()
+        if WorldMapFrame and WorldMapFrame:IsShown() then
+            if mapPanel then mapPanel:Show() end
+        elseif ToggleWorldMap then
+            ToggleWorldMap()
+        elseif WorldMapFrame then
+            WorldMapFrame:Show()
+        end
+    end)
 end
 
 -- Native objective tracker category. Unlike the previous floating companion, this

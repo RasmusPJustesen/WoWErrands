@@ -1,4 +1,4 @@
-WoWErrands v2.0.0 (WoW Forever 1.60.1)
+WoWErrands v2.0.1 (WoW Forever 1.60.1)
 - Errands now registers as a native, independently collapsible module inside
   Blizzard's All Objectives, between Professions and later modules.
 - Removed the separate floating WoWErrands tracker panel.

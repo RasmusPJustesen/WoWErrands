@@ -1,4 +1,4 @@
-WoWErrands 2.0.0 - WoW Forever 1.60.1 (interface 16001)
+WoWErrands 2.0.1 - WoW Forever 1.60.1 (interface 16001)
 =======================================================
 
 INSTALL
