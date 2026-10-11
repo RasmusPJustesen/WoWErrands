@@ -1,0 +1,14 @@
+# Local development
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Generated release archives and staging output
+/dist/
+*.zip
+
+# Temporary files
+*.tmp
+*.bak

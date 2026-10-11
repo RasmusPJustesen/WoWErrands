@@ -1,0 +1,49 @@
+name: Release addon
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Validate and publish ZIP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v7
+
+      - name: Install Lua 5.1 compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Validate files and release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must look like v2.0.0"
+            exit 1
+          fi
+          bash scripts/validate-addon.sh "$version"
+
+      - name: Build installable addon ZIP
+        shell: bash
+        run: bash scripts/package-addon.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/WoWErrands-${version}.zip" \
+            --title "WoWErrands ${version}" \
+            --generate-notes
