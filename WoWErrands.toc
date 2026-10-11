@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: WoWErrands
+## Notes: Zone errands, map companion, zone popup and native objective tracker category for WoW Forever.
+## Version: 2.0.0
+## SavedVariablesPerCharacter: WoWErrandsDB
+## OptionalDeps: Spoken_Zones, Blizzard_ObjectiveTracker
+## IconTexture: Interface\AddOns\WoWErrands\icon
+WoWErrands.lua

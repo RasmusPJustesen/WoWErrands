@@ -1,0 +1,10 @@
+WoWErrands v2.0.0 (WoW Forever 1.60.1)
+- Errands now registers as a native, independently collapsible module inside
+  Blizzard's All Objectives, between Professions and later modules.
+- Removed the separate floating WoWErrands tracker panel.
+- Pending current-zone errands appear as clickable checkboxes in the module.
+- Automatically refreshes on zone changes and when errands are added,
+  completed or removed. The section hides when no pending errands remain.
+- Collapsed state persists in existing SavedVariablesPerCharacter.
+- Map-based editor, parchment theme, tabs, zone-entry checklist and saved
+  data remain intact from v1.9.0.
