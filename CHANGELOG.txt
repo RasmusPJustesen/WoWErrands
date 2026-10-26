@@ -1,10 +1,53 @@
+WoWErrands v3.0.3 (WoW Forever)
+================================
+REMOVED
+- Removed the automatic-completion feature for now, pending a better design.
+- Removed the Auto button, completion-rule editor, quest/item completion
+  events, and periodic location-based completion checks.
+- All errands are now completed manually through their checkboxes.
+
+UNCHANGED
+- Map pins/waypoints, Shift-click tracking, reorder controls,
+  Azeroth-wide overview, and native Objective Tracker flash on zone entry.
+- Existing errands, order, completion state, and tracking are preserved.
+- Old automatic-rule metadata remains in SavedVariables as inactive data
+  to avoid losing information during upgrades or possible rollbacks.
+
+WoWErrands v3.0.2 (WoW Forever)
+================================
+FIXED
+- The Auto button now opens the Automatic Completion dialog. Version 3.0.1
+  accidentally removed the dialog builder, causing a Lua error on click.
+- Restored the copper-and-parchment styling for the automatic completion editor.
+
+IMPROVED
+- The Up and Down reorder controls now sit directly beside the X (remove)
+  button at the right of each errand. Pin and Auto stay together on the left.
+- The rule editor opens in front of the map, so its controls can be used.
+
+WoWErrands v3.0.1 (WoW Forever 1.60.1)
+- Removed the automatic zone-entry popup entirely.
+- Entering a zone with unfinished errands expands All Objectives > Errands
+  and briefly pulses the relevant objective lines in a Blizzard-style gold.
+- SHIFT-click an errand name or checkbox in the map panel to track/untrack it.
+- SHIFT-click an errand from the All zones overview to track/untrack it.
+- Explicitly tracked errands remain in All Objectives across zone changes;
+  manually untracked errands stay hidden from the tracker.
+- Tracking preferences persist per character; existing errands remain intact.
+
+WoWErrands v3.0.0 (WoW Forever 1.60.1)
+- Added stable IDs and an automatic, non-destructive v2.x SavedVariables migration.
+- Added map pins assigned by clicking the zone map and native map waypoints.
+- Added optional automatic completion for quest acceptance, quest turn-in,
+  collecting item quantities, and reaching a saved map location.
+- Added up/down reordering controls, retained across the popup and tracker.
+- Added a collapsible, Azeroth-wide overview within the existing map panel.
+- Shift-click pinned errands in All Objectives to create a waypoint.
+- Kept the copper/parchment interface, arrival window and native tracker module.
+- Did not add repeatable errands or snoozing.
+
 WoWErrands v2.0.1 (WoW Forever 1.60.1)
-- Errands now registers as a native, independently collapsible module inside
-  Blizzard's All Objectives, between Professions and later modules.
-- Removed the separate floating WoWErrands tracker panel.
-- Pending current-zone errands appear as clickable checkboxes in the module.
-- Automatically refreshes on zone changes and when errands are added,
-  completed or removed. The section hides when no pending errands remain.
-- Collapsed state persists in existing SavedVariablesPerCharacter.
-- Map-based editor, parchment theme, tabs, zone-entry checklist and saved
-  data remain intact from v1.9.0.
+- Matched the zone-entry window to the parchment/copper map panel design.
+
+WoWErrands v2.0.0
+- Registered Errands as a collapsible native objective-tracker module.

@@ -1,44 +1,62 @@
-WoWErrands 2.0.1 - WoW Forever 1.60.1 (interface 16001)
-=======================================================
+WoWErrands 3.0.3 - WoW Forever 1.60.1 (Interface 16001)
+======================================================
 
 INSTALL
 1. Exit World of Warcraft.
-2. Replace Interface/AddOns/WoWErrands with the WoWErrands folder
-   included in this ZIP. Do not keep multiple versions of the folder.
-3. Keep Spoken_Zones installed/enabled for an exact Zone Lore visual match.
-4. Restart WoW.
+2. Replace Interface/AddOns/WoWErrands with the enclosed WoWErrands folder.
+3. Restart World of Warcraft. Avoid keeping duplicate addon folders.
 
-The addon remains independent and can run without Spoken Zones. When
-Spoken_Zones is present, WoWErrands uses its actual quest-log parchment,
-ornament, inset rim and the same native panel and side-tab templates.
-Without Spoken_Zones, it uses the bundled fallback parchment.
+WoWErrands uses character-specific SavedVariables: WoWErrandsDB. Version 3.0.3
+migrates existing errands in place and preserves their completed state and order.
 
-BEHAVIOR
-- Opening Map & Quest Log shows Zone Errands beside Zone Lore (when open),
-  otherwise beside the map. The panel height and its width match the map/
-  Zone Lore when possible.
-- Closing Zone Errands turns it into a side tab. The tab never appears while
-  the panel is open. Closing Zone Lore allows both tabs to stack on the map
-  edge, using the same button template.
-- Zone Errands lists errands for the zone selected on the world map, including
-  completed errands, which can be checked, unchecked, removed or added.
-- Entering a zone with unfinished errands opens the arrival checklist and
-  creates a native, collapsible Errands category INSIDE Blizzard's All
-  Objectives tracker, ordered after Professions. Clicking an item completes it.
-  Errands disappears in zones without unfinished tasks. The collapse state is
-  remembered per character.
-- /we and /wowerrands open the map (or toggle Zone Errands if already open).
-- Existing character-specific SavedVariables (WoWErrandsDB) are retained.
+WHAT IT DOES
+- On entering a zone with unfinished errands, the native All Objectives tracker
+  expands the Errands category and briefly flashes its entries in gold.
+- No separate zone-entry popup is displayed.
+- In All Objectives, unfinished errands for the current zone appear automatically,
+  and manually tracked errands from other zones stay visible. Left-click an
+  errand to complete it manually; Shift-click to set a waypoint if it has a pin.
+- Opening Map & Quest Log shows the Zone Errands panel. It is placed beside
+  Zone Lore where possible and can be collapsed into a map-edge clipboard tab.
+- The map panel uses the same Forever panel template and original parchment
+  art from Spoken Zones when that addon is available.
 
-VISUAL SOURCE
-The map panel styling is based on the actual MapPanel.lua, LorePage.lua and
-TextView.lua from Spoken Zones (rusty-key, MIT-licensed UI code):
-https://github.com/rusty-key/spoken-wow
-This package does not redistribute Spoken's original art files. Instead it
-references artwork from the user's existing Spoken_Zones installation.
+MAP PINS AND WAYPOINTS
+- Select a zone on the world map and add an errand.
+- Click Pin beside that errand, then click its location on the zone map.
+- Click the map pin itself or use Go beside the errand to set a Blizzard waypoint.
+- Right-click Go to replace an existing pin. Use Cancel while placing a pin.
+- The game only allows waypoints on maps supported by C_Map.
 
-TESTING
-The files are packaged for WoW Forever 1.60.1. The objective tracker module
-integration requires in-game testing. It uses Blizzard's built-in
-ObjectiveTrackerModuleTemplate and ObjectiveTrackerManager; it does not replace
-or manually reposition the Blizzard tracker.
+MANUAL COMPLETION
+- Errands are completed by clicking their checkbox. No automatic completion
+  rules are evaluated in this version. Previously configured rules are inactive.
+
+REORDER AND OVERVIEW
+- Use ^ and v beside the x (Remove) button to move an errand up or down. That order also
+  applies to the native All Objectives section.
+- SHIFT-click an errand's name or checkbox in the Zone Errands map panel
+  to track it persistently in All Objectives, even when you leave the zone.
+  SHIFT-click again to untrack it. The same shortcut works in All zones.
+- New/previous errands appear automatically while in their zone, unless
+  explicitly untracked; tracking preferences are saved per character.
+- Click All zones in the Zone Errands panel to see a grouped list of all
+  unfinished errands across Azeroth. Click a zone or errand to open its map.
+- Existing errands from older versions have no map ID until a zone is opened
+  in the map or can be resolved through C_Map's zone catalog.
+
+COMMANDS
+/we or /wowerrands  Open the map-based Zone Errands panel.
+
+DESIGN AND DEPENDENCIES
+Special thanks to rustykey, author of Spoken (Spoken Player), whose Zone Lore
+interface inspired the copper and parchment design. Spoken_Zones is optional.
+Where installed, its artwork is used at runtime to match Zone Lore; its
+original art is not redistributed in this ZIP. Without Spoken, WoWErrands
+uses a bundled parchment fallback and Blizzard frames.
+
+COMPATIBILITY
+Target: WoW Forever 1.60.1 (Interface 16001, Camelot). Client APIs may
+change between Forever builds. This release was syntax-checked and tested
+with a simulated addon UI; it has NOT been verified inside a running client.
+Please report errors at https://github.com/RasmusPJustesen/WoWErrands/issues
