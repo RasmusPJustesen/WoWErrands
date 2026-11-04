@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: WoWErrands
-## Notes: Zone errands, map companion, native objective tracker category and map tracking for WoW Forever.
+## Notes: Zone errands, quest log category, native objective tracker category and map tracking for WoW Forever.
 ## Version: 3.0.3
 ## SavedVariablesPerCharacter: WoWErrandsDB
 ## OptionalDeps: Spoken_Zones, Blizzard_ObjectiveTracker

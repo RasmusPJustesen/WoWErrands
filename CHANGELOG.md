@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Errands are now a collapsible **Errands** category inside the world map's quest log, on the same level as quests, replacing the separate panel and side tab next to the map.
+- All errand actions (track, waypoint, pin, reorder, remove) are available through plain clicks on an expandable row, so the section works with the gamepad cursor.
+
 ## 2.0.0 — Initial GitHub release
 
 - Added an independently collapsible **Errands** section inside Blizzard's All Objectives tracker.
