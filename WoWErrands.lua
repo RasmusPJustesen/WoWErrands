@@ -1,6 +1,6 @@
 -- WoWErrands: small, native-styled zone todo lists for WoW: Forever (Interface 16001).
 local addon = CreateFrame("Frame")
-local tracker, mapPanel, mapTab
+local tracker, questLog
 local activeZone
 local Core = _G.WoWErrandsCore
 
@@ -17,17 +17,6 @@ local function button(parent, label, width, height)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     b:SetSize(width, height)
     b:SetText(label)
-    return b
-end
-
-local function check(parent, width)
-    local b = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
-    b:SetSize(25, 25)
-    b.label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    b.label:SetPoint("LEFT", b, "RIGHT", 3, 0)
-    b.label:SetJustifyH("LEFT")
-    b.label:SetWidth(width - 35)
-    b.label:SetWordWrap(false)
     return b
 end
 
@@ -284,382 +273,40 @@ requestTrackerAttention = function(zone, taskID, requireCurrent)
     end
 end
 
--- A map companion, deliberately not a standalone /we management dialog.
--- All list edits are tied to the zone currently selected on the Blizzard map.
--- The map companion mirrors Spoken Zones' actual Forever UI construction:
--- DefaultPanelFlatTemplate, its quest-details parchment, inset quest-log rim,
--- header backplate, divider and LargeSideTabButtonTemplate.
--- All references to Spoken are optional and explicit. Never scan game frames or
--- compare unknown FontString text: modern Forever can make those values secret.
-local function buildMapPanel()
+-- Errands live inside the world map's quest log, as a collapsible category on
+-- the same level as the quest headers. Our frames are appended to the public
+-- QuestScrollFrame.Contents layout through a high layoutIndex; Blizzard's own
+-- quest rows are never modified, scanned or compared against secret strings.
+-- Every action is a plain left-click (no modifier keys), so the section works
+-- with the gamepad virtual cursor as well as with a mouse.
+local LAYOUT_BASE = 100000
+
+local function buildQuestLogSection()
     local map = WorldMapFrame
-    if not map then return end
+    local scrollFrame = _G.QuestScrollFrame
+    local contents = scrollFrame and scrollFrame.Contents
+    if not (map and contents) then return false end
 
-    local ART = "Interface\\AddOns\\Spoken_Zones\\Textures\\Art\\"
-    local COPIES = {
-        ["QuestDetailsBackgrounds"] = { file = ART .. "QuestDetailsBackgrounds", u = 0.560547, v = 0.90625 },
-        ["spellbook-list-backplate"] = { file = ART .. "spellbook-list-backplate", u = 0.617188, v = 0.828125 },
-        ["spellbook-divider"] = { file = ART .. "spellbook-divider", u = 0.641602, v = 0.6875 },
-        ["questlog-frame-filigree"] = { file = ART .. "questlog-frame-filigree", u = 0.75, v = 0.59375 },
-    }
-    local function spokenArt()
-        return _G.SpokenZones and _G.SpokenZones.Art
-    end
-    local function artCopy(name)
-        local art = spokenArt()
-        return (art and art.COPIES and art.COPIES[name]) or COPIES[name]
-    end
-    local function unsnap(texture)
-        if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
-        if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
-    end
-    local function parchment(parent)
-        local background = parent:CreateTexture(nil, "BACKGROUND")
-        background:SetAllPoints()
-        local art = spokenArt()
-        local copy = art and art.COPIES and art.COPIES["QuestDetailsBackgrounds"]
-        -- If Spoken is present, this is its very same Forever texture, not an
-        -- approximation. The copy coordinates cut the original image correctly.
-        if copy then
-            background:SetTexture(copy.file)
-            background:SetTexCoord(copy.leftTexCoord, copy.rightTexCoord,
-                copy.topTexCoord, copy.bottomTexCoord)
-        else
-            -- On a game without Spoken, prefer the native client atlas if present.
-            local hasAtlas = C_Texture and C_Texture.GetAtlasInfo
-                and C_Texture.GetAtlasInfo("QuestDetailsBackgrounds")
-            if hasAtlas and background.SetAtlas then
-                background:SetAtlas("QuestDetailsBackgrounds")
-            else
-                background:SetTexture("Interface\\AddOns\\WoWErrands\\parchment")
-            end
-        end
-        unsnap(background)
-        return background
-    end
-    local function ink(font, r, g, b)
-        local art = spokenArt()
-        local original = art and art.INK
-        if original then
-            r, g, b = r or original[1], g or original[2], b or original[3]
-        elseif SPELLBOOK_FONT_COLOR and SPELLBOOK_FONT_COLOR.GetRGB then
-            local a, c, d = SPELLBOOK_FONT_COLOR:GetRGB()
-            r, g, b = r or a, g or c, b or d
-        end
-        font:SetTextColor(r or 0.25, g or 0.16, b or 0.08, 1)
-        font:SetShadowColor(0, 0, 0, 0)
-    end
-    local function isGamepadUI()
-        if not GetCVar then return false end
-        local ok, value = pcall(GetCVar, "InputDeviceInterfaceStyle")
-        return ok and value == "1"
-    end
-    local function host()
-        return isGamepadUI() and UIParent or map
-    end
-    local function lorePanel()
-        -- Exact name from Spoken_Zones/UI/MapPanel.lua, unlike the previous
-        -- guessed names and its unsafe font-string scan.
-        local panel = _G.SpokenZonesPanel
-        if panel and panel.IsShown and panel:IsShown() then return panel end
-        return nil
-    end
-    local function canShow()
-        return map:IsShown() and not (map.IsMaximized and map:IsMaximized())
-    end
-    local function widthToMatch()
-        local panel = _G.SpokenZonesPanel
-        if panel and panel.GetWidth and panel:GetWidth() > 0 then
-            return panel:GetWidth()
-        end
-        local spoken = _G.SpokenZones
-        if spoken and spoken.Get then
-            local ok, value = pcall(spoken.Get, spoken, "panelWidth")
-            if ok and type(value) == "number" and value > 0 then return value end
-        end
-        return 390
-    end
-
-    local ok, frame = pcall(CreateFrame, "Frame", "WoWErrandsMapPanel", UIParent, "DefaultPanelFlatTemplate")
-    local templated = ok and frame and frame.SetTitle
-    if not templated then
-        frame = CreateFrame("Frame", "WoWErrandsMapPanel", UIParent, "BackdropTemplate")
-        frame:SetBackdrop({
-            bgFile = [[Interface\DialogFrame\UI-DialogBox-Background-Dark]],
-            edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
-            tile = true, tileSize = 32, edgeSize = 32,
-            insets = { left = 11, right = 12, top = 12, bottom = 11 },
-        })
-    else
-        frame:SetTitle("Zone Errands")
-    end
-    mapPanel = frame
-    mapPanel:SetWidth(widthToMatch())
-    mapPanel:SetHeight(math.max(map:GetHeight(), 360))
-    mapPanel:EnableMouse(true)
-    if not templated then
-        local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        title:SetPoint("TOP", frame, "TOP", 0, -13)
-        title:SetText("Zone Errands")
-    end
-    local close = CreateFrame("Button", nil, mapPanel,
-        templated and "UIPanelCloseButtonDefaultAnchors" or "UIPanelCloseButton")
-    if not templated then close:SetPoint("TOPRIGHT", mapPanel, "TOPRIGHT", -8, -8) end
-    close:SetScript("OnClick", function() mapPanel:Hide() end)
-    mapPanel.close = close
-
-    -- Exactly the holder dimensions used in Spoken_Zones/UI/MapPanel.lua.
-    local holder = CreateFrame("Frame", nil, mapPanel)
-    if templated then
-        holder:SetPoint("TOPLEFT", mapPanel, "TOPLEFT", 7, -25)
-        holder:SetPoint("BOTTOMRIGHT", mapPanel, "BOTTOMRIGHT", -5, 6)
-    else
-        holder:SetPoint("TOPLEFT", mapPanel, "TOPLEFT", 12, -32)
-        holder:SetPoint("BOTTOMRIGHT", mapPanel, "BOTTOMRIGHT", -12, 12)
-    end
-    local page = CreateFrame("Frame", nil, holder)
-    page:SetAllPoints()
-    parchment(page)
-
-    -- Spoken's faded spellbook backplate, cropped, not stretched. The parchment
-    -- remains opaque and extends right up against the same ornate inner rim.
-    local backplate = page:CreateTexture(nil, "BORDER")
-    local backInfo = artCopy("spellbook-list-backplate")
-    if backInfo then
-        local left = backInfo.leftTexCoord or 0
-        local right = backInfo.rightTexCoord or backInfo.u
-        local top = backInfo.topTexCoord or 0
-        local bottom = backInfo.bottomTexCoord or backInfo.v
-        backplate:SetTexture(backInfo.file)
-        backplate:SetHeight(80)
-        backplate:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)
-        backplate:SetAlpha(0.55)
-        local function fitBackplate()
-            local whole, crop = 300, 40
-            local shown = math.min(whole - crop, math.max(0, page:GetWidth() or 0))
-            backplate:SetWidth(shown)
-            backplate:SetTexCoord(left + (right-left)*crop/whole,
-                left + (right-left)*(crop+shown)/whole, top, bottom)
-        end
-        page:HookScript("OnSizeChanged", fitBackplate)
-        fitBackplate()
-    end
-
-    -- The original questlog-frame nine-slice and filigree. Use Spoken's own
-    -- Art.NineSlice helper, so every corner/edge is exactly the Zone Lore art.
-    local rim = CreateFrame("Frame", nil, holder)
-    rim:SetPoint("TOPLEFT", holder, "TOPLEFT", -2, 3)
-    rim:SetPoint("BOTTOMRIGHT", holder, "BOTTOMRIGHT", 2, -3)
-    rim:SetFrameLevel(holder:GetFrameLevel() + 12)
-    rim:EnableMouse(false)
-    local art = spokenArt()
-    if art and art.NineSlice then
-        rim.border = art.NineSlice(rim, "questlog-frame", "OVERLAY")
-    elseif rim.SetBackdrop then
-        rim:SetBackdrop({ edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
-            edgeSize = 24, insets = { left = 6, right = 6, top = 6, bottom = 6 } })
-    else
-        -- Add BackdropTemplate only for this standalone fallback.
-        local fallback = CreateFrame("Frame", nil, rim, "BackdropTemplate")
-        fallback:SetAllPoints()
-        fallback:SetBackdrop({ edgeFile = [[Interface\DialogFrame\UI-DialogBox-Border]],
-            edgeSize = 24, insets = { left = 6, right = 6, top = 6, bottom = 6 } })
-    end
-    local filigree = rim:CreateTexture(nil, "OVERLAY", nil, 1)
-    if art and art.Atlas then
-        art.Atlas(filigree, "questlog-frame-filigree", true)
-    else
-        local info = artCopy("questlog-frame-filigree")
-        if info then
-            filigree:SetTexture(info.file)
-            filigree:SetSize(48, 19)
-            filigree:SetTexCoord(0, info.u, 0, info.v)
-        end
-    end
-    filigree:SetPoint("TOP", rim, "TOP", 0, 1)
-    mapPanel.rim = rim
-
-    -- Title, subtitle and illustrated divider are placed exactly like LorePage
-    -- (24 px left, 28 px top). The panel body below is an editable checklist.
-    local heading = page:CreateFontString(nil, "ARTWORK", _G.QuestTitleFont and "QuestTitleFont" or "GameFontNormalLarge")
-    local fontFile = _G.QuestTitleFont and _G.QuestTitleFont.GetFont and _G.QuestTitleFont:GetFont()
-    if fontFile then heading:SetFont(fontFile, 20, "") end
-    heading:SetPoint("TOPLEFT", page, "TOPLEFT", 24, -28)
-    heading:SetPoint("RIGHT", page, "RIGHT", -28, 0)
-    heading:SetJustifyH("LEFT")
-    heading:SetWordWrap(false)
-    if heading.SetMaxLines then heading:SetMaxLines(1) end
-    ink(heading)
-    local subtitle = page:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    subtitle:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", 0, -2)
-    subtitle:SetPoint("RIGHT", page, "RIGHT", -28, 0)
-    subtitle:SetHeight(16)
-    subtitle:SetJustifyH("LEFT")
-    ink(subtitle)
-    local divider = page:CreateTexture(nil, "ARTWORK")
-    divider:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", -6, -10)
-    divider:SetHeight(11)
-    local dividerInfo = artCopy("spellbook-divider")
-    if dividerInfo then
-        divider:SetTexture(dividerInfo.file)
-        local left = dividerInfo.leftTexCoord or 0
-        local right = dividerInfo.rightTexCoord or dividerInfo.u
-        local top = dividerInfo.topTexCoord or 0
-        local bottom = dividerInfo.bottomTexCoord or dividerInfo.v
-        local function fitDivider()
-            local visible = math.min(657, math.max(1, (page:GetWidth() or 0) - 18 - 28))
-            divider:SetWidth(visible)
-            divider:SetTexCoord(left, left + (right - left) * visible/657, top, bottom)
-        end
-        page:HookScript("OnSizeChanged", fitDivider)
-        fitDivider()
-    end
-
-    local scroll = CreateFrame("ScrollFrame", "WoWErrandsMapScroll", page)
-    scroll:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 6, -7)
-    scroll:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -42, 96)
-    scroll:EnableMouseWheel(true)
-    local contents = CreateFrame("Frame", nil, scroll)
-    contents:SetSize(320, 1)
-    scroll:SetScrollChild(contents)
-
-    -- Spoken's TextView scrollbar uses the same minimalist track and small
-    -- thumb atlases, not UIPanelScrollFrameTemplate's large square arrows.
-    local function hasAtlas(name)
-        return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
-    end
-    local function piece(parent, layer, atlas)
-        if not hasAtlas(atlas) then return nil end
-        local texture = parent:CreateTexture(nil, layer)
-        texture:SetAtlas(atlas, true)
-        return texture
-    end
-    local function threePiece(parent, layer, a, b, c)
-        local top = piece(parent, layer, a)
-        local middle = piece(parent, layer, b)
-        local bottom = piece(parent, layer, c)
-        if not (top and middle and bottom) then
-            if top then top:Hide() end
-            if middle then middle:Hide() end
-            if bottom then bottom:Hide() end
-            return nil
-        end
-        top:SetPoint("TOP", parent, "TOP")
-        bottom:SetPoint("BOTTOM", parent, "BOTTOM")
-        middle:ClearAllPoints()
-        middle:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
-        middle:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
-        return {top, middle, bottom}
-    end
-    local bar = CreateFrame("Frame", nil, page)
-    bar:SetWidth(8)
-    bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", 2, 0)
-    bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", 2, 0)
-    bar:SetFrameLevel(scroll:GetFrameLevel() + 8)
-    bar:EnableMouse(true)
-    local track = threePiece(bar, "BACKGROUND", "minimal-scrollbar-track-top",
-        "!minimal-scrollbar-track-middle", "minimal-scrollbar-track-bottom")
-    if not track then
-        local fallback = bar:CreateTexture(nil, "BACKGROUND")
-        fallback:SetAllPoints()
-        fallback:SetColorTexture(0.3, 0.2, 0.1, 0.17)
-    end
-    local thumb = CreateFrame("Button", nil, bar)
-    thumb:SetWidth(8)
-    thumb:SetHeight(20)
-    thumb:SetPoint("TOP", bar, "TOP")
-    local thumbParts = threePiece(thumb, "ARTWORK", "minimal-scrollbar-small-thumb-top",
-        "minimal-scrollbar-small-thumb-middle", "minimal-scrollbar-small-thumb-bottom")
-    if not thumbParts then
-        local thumbTex = thumb:CreateTexture(nil, "ARTWORK")
-        thumbTex:SetAllPoints()
-        thumbTex:SetColorTexture(0.36, 0.24, 0.13, 0.65)
-    end
-    local range = 0
-    local updatingScrollbar = false
-    local function refreshScrollBar()
-        if updatingScrollbar then return end
-        updatingScrollbar = true
-        local viewHeight = scroll:GetHeight() or 0
-        local contentHeight = contents:GetHeight() or 0
-        range = math.max(0, contentHeight - viewHeight)
-        if range < 1 or viewHeight < 1 then
-            bar:Hide()
-            if (scroll:GetVerticalScroll() or 0) > 0 then scroll:SetVerticalScroll(0) end
-            updatingScrollbar = false
-            return
-        end
-        bar:Show()
-        local height = bar:GetHeight() or 0
-        local thumbHeight = math.min(height, math.max(20, (viewHeight/contentHeight)*height))
-        thumb:SetHeight(thumbHeight)
-        local fraction = math.min(1, math.max(0, (scroll:GetVerticalScroll() or 0)/range))
-        thumb:ClearAllPoints()
-        thumb:SetPoint("TOP", bar, "TOP", 0, -(height-thumbHeight)*fraction)
-        updatingScrollbar = false
-    end
-    local function setScroll(value)
-        scroll:SetVerticalScroll(math.min(range, math.max(0, value)))
-        refreshScrollBar()
-    end
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        setScroll((self:GetVerticalScroll() or 0) - delta*32)
-    end)
-    scroll:SetScript("OnVerticalScroll", refreshScrollBar)
-    scroll:HookScript("OnSizeChanged", function()
-        contents:SetWidth(math.max(1, scroll:GetWidth()))
-        refreshScrollBar()
-    end)
-    local dragging = false
-    local function cursorY()
-        local _, y = GetCursorPosition()
-        return y / (bar:GetEffectiveScale() or 1)
-    end
-    local grab
-    thumb:SetScript("OnMouseDown", function(self, mouseButton)
-        if mouseButton and mouseButton ~= "LeftButton" then return end
-        grab = (self:GetTop() or 0) - cursorY()
-        dragging = true
-        bar:SetScript("OnUpdate", function()
-            if IsMouseButtonDown and not IsMouseButtonDown("LeftButton") then
-                dragging = false
-                bar:SetScript("OnUpdate", nil)
-                return
-            end
-            local travel = math.max(1, bar:GetHeight() - thumb:GetHeight())
-            local amount = math.min(1, math.max(0, ((bar:GetTop() or 0) - cursorY() - grab)/travel))
-            setScroll(amount*range)
-        end)
-    end)
-    thumb:SetScript("OnMouseUp", function()
-        dragging = false
-        bar:SetScript("OnUpdate", nil)
-    end)
-    bar:SetScript("OnMouseDown", function()
-        local direction = cursorY() > (thumb:GetTop() or 0) and -1 or 1
-        setScroll((scroll:GetVerticalScroll() or 0) + direction*math.max(32, scroll:GetHeight()-32))
-    end)
-
-    -- The footer sits on the same parchment; no separate black dialog box.
-    local footerLabel = page:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    footerLabel:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 24, 64)
-    footerLabel:SetText("Add an errand")
-    ink(footerLabel)
-    local entry = CreateFrame("EditBox", nil, page, "InputBoxTemplate")
-    entry:SetHeight(25)
-    entry:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 29, 30)
-    entry:SetPoint("RIGHT", page, "RIGHT", -105, 0)
-    entry:SetAutoFocus(false)
-    entry:SetMaxLetters(160)
-    local add = button(page, "Add", 62, 24)
-    add:SetPoint("LEFT", entry, "RIGHT", 9, 0)
-    local currentMapZone
-    local entryRows = {}
+    local section = { frames = {} }
+    questLog = section
+    local INK_R, INK_G, INK_B = 1, 0.82, 0
+    local placingID, placingZone, placingMapID
+    local expandedID
+    local mapPins = {}
     local render
+
+    local function notice(message)
+        if UIErrorsFrame and UIErrorsFrame.AddMessage then
+            UIErrorsFrame:AddMessage("WoWErrands: " .. message, 1, 0.65, 0.25)
+        end
+    end
+    local function mapID()
+        return (map.GetMapID and map:GetMapID()) or map.mapID
+    end
     local function selectedMapZone()
-        local mapID = (map.GetMapID and map:GetMapID()) or map.mapID
-        if not mapID or not C_Map or not C_Map.GetMapInfo then return nil end
-        local info = C_Map.GetMapInfo(mapID)
+        local id = mapID()
+        if not id or not C_Map or not C_Map.GetMapInfo then return nil end
+        local info = C_Map.GetMapInfo(id)
         if not info or not info.name then return nil end
         local t = Enum and Enum.UIMapType
         if t and info.mapType and
@@ -668,48 +315,21 @@ local function buildMapPanel()
         end
         return info.name
     end
-    local function trim(value)
-        return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    local function width()
+        local w = contents:GetWidth() or 0
+        if w < 100 then w = (scrollFrame:GetWidth() or 0) - 12 end
+        return math.max(200, w)
     end
-    local function addTask()
-        local value = trim(entry:GetText())
-        if not currentMapZone or value == "" then return end
-        Core.Add(currentMapZone, value)
-        entry:SetText("")
-        entry:ClearFocus()
-        updateAll()
-    end
-    add:SetScript("OnClick", addTask)
-    entry:SetScript("OnEnterPressed", addTask)
-    entry:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-    local empty = contents:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    empty:SetPoint("TOPLEFT", contents, "TOPLEFT", 0, -9)
-    empty:SetPoint("RIGHT", contents, "RIGHT", -6, 0)
-    empty:SetJustifyH("LEFT")
-    empty:SetText("No errands yet. Add one below.")
-    ink(empty)
-    -- v3: Everything stays within this single native-styled map companion.
-    -- Stable IDs keep pins and reordering attached to the right errand.
-    local overviewMode = false
-    local placingID, placingZone, placingMapID
-    local mapPins, overviewRows = {}, {}
-    local rowHeight = 56
-    local currentMapID
-
-    local function notice(message)
-        if UIErrorsFrame and UIErrorsFrame.AddMessage then
-            UIErrorsFrame:AddMessage("WoWErrands: " .. message, 1, 0.65, 0.25)
+    local function tooltip(owner, title, ...)
+        GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+        GameTooltip:SetText(title)
+        for i = 1, select("#", ...) do
+            GameTooltip:AddLine((select(i, ...)), 0.8, 0.7, 0.5, true)
         end
+        GameTooltip:Show()
     end
-
-    local function trackingHint(task, zone)
-        if task.tracked == true then return "Shift-click to untrack" end
-        if task.tracked == nil and zone == activeZone then
-            return "Shift-click to keep tracking after leaving this zone"
-        end
-        return "Shift-click to track in All Objectives"
-    end
+    local function hideTooltip() GameTooltip:Hide() end
+    local function collapsed() return db().settings.questLogCollapsed == true end
 
     local function toggleTracking(zone, taskID)
         local ok, tracked = Core.ToggleTracked(zone, taskID)
@@ -720,28 +340,22 @@ local function buildMapPanel()
         updateAll()
         if tracked then requestTrackerAttention(zone, taskID, false) end
     end
-
     local function setWaypoint(loc)
         local ok, errorMessage = Core.SetWaypoint(loc)
         if not ok then notice(errorMessage or "Unable to set waypoint.") end
     end
 
-    local function mapID()
-        return (map.GetMapID and map:GetMapID()) or map.mapID
-    end
-
+    -- Map pins for the errands of the zone currently shown on the map.
     local function ensurePin(task, zone)
         local loc = task.location
-        if not loc or not task.id then return end
         local container = map.ScrollContainer
-        local available = type(container) == "table" or type(container) == "userdata"
-        local canvas = available and container.GetCanvas and container:GetCanvas()
+        if type(container) ~= "table" and type(container) ~= "userdata" then return end
+        local canvas = container.GetCanvas and container:GetCanvas()
         if not canvas then return end
         local pin = mapPins[task.id]
         if not pin then
             pin = CreateFrame("Button", nil, canvas)
             pin:SetSize(26, 26)
-            pin:SetFrameLevel(canvas:GetFrameLevel() + 25)
             local artwork = pin:CreateTexture(nil, "ARTWORK")
             artwork:SetPoint("CENTER")
             artwork:SetSize(22, 22)
@@ -758,74 +372,52 @@ local function buildMapPanel()
             end)
             pin:SetScript("OnEnter", function(self)
                 local selected = Core.Find(self.zone, self.taskID)
-                if selected then
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetText(selected.text)
-                    GameTooltip:AddLine("Click to set a Blizzard waypoint", 0.8, 0.7, 0.5)
-                    GameTooltip:Show()
-                end
+                if selected then tooltip(self, selected.text, "Click to set a Blizzard waypoint") end
             end)
-            pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            pin:SetScript("OnLeave", hideTooltip)
             mapPins[task.id] = pin
         elseif pin:GetParent() ~= canvas then
             pin:SetParent(canvas)
         end
+        pin:SetFrameLevel(canvas:GetFrameLevel() + 25)
         pin.taskID, pin.zone = task.id, zone
         pin:ClearAllPoints()
-        pin:SetPoint("CENTER", canvas, "TOPLEFT", canvas:GetWidth() * loc.x,
-            -canvas:GetHeight() * loc.y)
+        pin:SetPoint("CENTER", canvas, "TOPLEFT", canvas:GetWidth() * loc.x, -canvas:GetHeight() * loc.y)
         pin:Show()
     end
-
     local function refreshPins()
         for _, pin in pairs(mapPins) do pin:Hide() end
-        local zone = selectedMapZone()
-        local id = mapID()
-        if not zone or not id or overviewMode then return end
-        local tasks = getTasks(zone)
-        if not tasks then return end
-        for _, task in ipairs(tasks) do
+        local zone, id = selectedMapZone(), mapID()
+        if not zone or not id or not map:IsShown() then return end
+        for _, task in ipairs(getTasks(zone) or {}) do
             if not task.done and task.location and task.location.mapID == id then
                 ensurePin(task, zone)
             end
         end
     end
 
-    local placeCancel = button(page, "Cancel", 72, 23)
-    placeCancel:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -18, 30)
-    placeCancel:Hide()
-
     local function cancelPlacement()
+        if not placingID then return end
         placingID, placingZone, placingMapID = nil, nil, nil
-        footerLabel:SetText("Add an errand")
-        entry:Show()
-        add:Show()
-        placeCancel:Hide()
+        if render then render() end
     end
-    placeCancel:SetScript("OnClick", cancelPlacement)
-
     local function beginPlacement(zone, id)
-        local task = Core.Find(zone, id)
-        if not task then return end
+        if not Core.Find(zone, id) then return end
         if zone ~= selectedMapZone() then
-            notice("Select the errand's zone on the map first.")
+            notice("Open the errand's zone on the map first.")
             return
         end
         placingID, placingZone, placingMapID = id, zone, mapID()
-        footerLabel:SetText("Click a location on the map to pin this errand")
-        entry:Hide()
-        add:Hide()
-        placeCancel:Show()
+        render()
     end
 
-    -- Spoken uses this same public map scroll handler to resolve subzone clicks.
-    -- Do not replace Blizzard handlers or read any protected frame text.
+    -- The same public map scroll handlers Spoken uses for subzone clicks.
     local mapClickHooked = false
     local function hookMapClicks()
         if mapClickHooked then return end
         local container = map.ScrollContainer
-        local available = type(container) == "table" or type(container) == "userdata"
-        if not available or not container.GetNormalizedCursorPosition then return end
+        if type(container) ~= "table" and type(container) ~= "userdata" then return end
+        if not container.GetNormalizedCursorPosition then return end
         mapClickHooked = true
         local clickX, clickY, clickMap
         container:HookScript("OnMouseDown", function(self, which)
@@ -839,12 +431,11 @@ local function buildMapPanel()
             local x, y = self:GetNormalizedCursorPosition()
             local startX, startY, startMap = clickX, clickY, clickMap
             clickX, clickY, clickMap = nil, nil, nil
-            if not x or not y or not startX or not startY or mapID() ~= startMap
+            if not x or not y or mapID() ~= startMap
                 or startMap ~= placingMapID or selectedMapZone() ~= placingZone then return end
             if math.abs(startX - x) + math.abs(startY - y) > 0.012 then return end
-            local zone, id = placingZone, placingID
-            if Core.SetLocation(zone, id, startMap, x, y) then
-                cancelPlacement()
+            if Core.SetLocation(placingZone, placingID, startMap, x, y) then
+                placingID, placingZone, placingMapID = nil, nil, nil
                 updateAll()
             end
         end)
@@ -852,461 +443,336 @@ local function buildMapPanel()
     hookMapClicks()
     map:HookScript("OnShow", hookMapClicks)
 
-    local overviewButton = button(page, "All zones", 90, 22)
-    overviewButton:SetPoint("TOPRIGHT", page, "TOPRIGHT", -25, -31)
-    heading:ClearAllPoints()
-    heading:SetPoint("TOPLEFT", page, "TOPLEFT", 24, -28)
-    heading:SetPoint("RIGHT", overviewButton, "LEFT", -8, 0)
+    -- Category header. Prefer the quest log's own header template for an
+    -- identical look; its scripts are replaced so it never touches quest data.
+    local ok, header = pcall(CreateFrame, "Button", nil, contents, "QuestLogHeaderCodeTemplate")
+    if not ok or not header then
+        header = CreateFrame("Button", nil, contents)
+        header:SetNormalFontObject("GameFontNormalMed3")
+        header:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        header.Icon = header:CreateTexture(nil, "ARTWORK")
+        header.Icon:SetSize(16, 16)
+        header.Icon:SetPoint("LEFT", header, "LEFT", 4, 0)
+    end
+    header:SetHeight(header:GetHeight() > 0 and header:GetHeight() or 30)
+    header:SetText("Errands")
+    local headerText = header.ButtonText or header:GetFontString()
+    if headerText and not header.ButtonText and header.Icon then
+        headerText:ClearAllPoints()
+        headerText:SetPoint("LEFT", header.Icon, "RIGHT", 6, 0)
+    end
+    header.layoutIndex = LAYOUT_BASE
+    header.topPadding = 6
+    if header.RegisterForClicks then header:RegisterForClicks("LeftButtonUp") end
+    local function toggleCollapsed()
+        db().settings.questLogCollapsed = not collapsed()
+        expandedID = nil
+        render()
+    end
+    header:SetScript("OnClick", toggleCollapsed)
+    if header.CollapseButton then header.CollapseButton:SetScript("OnClick", toggleCollapsed) end
+    header:SetScript("OnEnter", function(self)
+        tooltip(self, "Errands", collapsed() and "Click to expand" or "Click to collapse")
+    end)
+    header:SetScript("OnLeave", hideTooltip)
+    local function updateHeaderState()
+        local isCollapsed = collapsed()
+        local button = header.CollapseButton
+        if button and button.UpdateCollapsedState then
+            if pcall(button.UpdateCollapsedState, button, isCollapsed) then return end
+        end
+        if header.Icon then
+            header.Icon:SetTexture(isCollapsed and "Interface\\Buttons\\UI-PlusButton-Up"
+                or "Interface\\Buttons\\UI-MinusButton-Up")
+        end
+    end
 
-    local function overviewRow(index)
-        if overviewRows[index] then return overviewRows[index] end
-        local row = CreateFrame("Button", nil, contents)
-        row:SetPoint("TOPLEFT", contents, "TOPLEFT", 0, 0)
-        row:SetPoint("RIGHT", contents, "RIGHT", 0, 0)
-        local label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        label:SetPoint("LEFT", row, "LEFT", 5, 0)
-        label:SetPoint("RIGHT", row, "RIGHT", -5, 0)
-        label:SetJustifyH("LEFT")
-        label:SetWordWrap(false)
-        label:SetTextColor(0.26, 0.16, 0.07)
-        row.label = label
-        row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-        row:SetScript("OnClick", function(self)
-            if not self.zone then return end
-            if self.task and IsShiftKeyDown and IsShiftKeyDown() then
-                toggleTracking(self.zone, self.task.id)
+    local function place(frame, index)
+        frame.layoutIndex = LAYOUT_BASE + index
+        frame.leftPadding = frame.leftPadding or 0
+        frame:SetWidth(width() - (frame.leftPadding or 0))
+        frame:Show()
+    end
+
+    local function smallButton(parent, label, w)
+        local b = button(parent, label, w, 20)
+        b:SetScript("OnLeave", hideTooltip)
+        return b
+    end
+
+    -- Errand rows: [x] Errand text. Clicking the text expands a row of action
+    -- buttons, so tracking, pins and ordering never require Shift or right-click.
+    local rows, zoneRows = {}, {}
+    local function getRow(index)
+        if rows[index] then return rows[index] end
+        local row = CreateFrame("Frame", nil, contents)
+        row.leftPadding = 10
+        row:SetHeight(24)
+        row.tick = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+        row.tick:SetSize(22, 22)
+        row.tick:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -1)
+        row.tick:SetScript("OnClick", function(self)
+            if Core.SetDone(row.zone, row.taskID, self:GetChecked()) then updateAll() end
+        end)
+        row.tick:SetScript("OnEnter", function(self)
+            tooltip(self, row.text or "", "Click to toggle completion")
+        end)
+        row.tick:SetScript("OnLeave", hideTooltip)
+        row.name = CreateFrame("Button", nil, row)
+        row.name:SetPoint("TOPLEFT", row, "TOPLEFT", 24, -1)
+        row.name:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, -1)
+        row.name:SetHeight(22)
+        row.name:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        row.name:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        row.label = row.name:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        row.label:SetPoint("LEFT", row.name, "LEFT", 2, 0)
+        row.label:SetPoint("RIGHT", row.name, "RIGHT", -2, 0)
+        row.label:SetJustifyH("LEFT")
+        row.label:SetWordWrap(false)
+        row.name:SetScript("OnClick", function(_, which)
+            if which == "LeftButton" and IsShiftKeyDown and IsShiftKeyDown() then
+                toggleTracking(row.zone, row.taskID)
                 return
             end
+            expandedID = (expandedID == row.taskID) and nil or row.taskID
+            render()
+        end)
+        row.name:SetScript("OnEnter", function(self)
+            local lines = { "Click to show actions" }
+            if row.zone ~= selectedMapZone() then lines[2] = "Zone: " .. (row.zone or "") end
+            tooltip(self, row.text or "", unpack(lines))
+        end)
+        row.name:SetScript("OnLeave", hideTooltip)
+
+        -- Action strip: [Track] [Go] [Pin]            [^] [v] [x]
+        local actions = CreateFrame("Frame", nil, row)
+        actions:SetPoint("TOPLEFT", row, "TOPLEFT", 24, -24)
+        actions:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, -24)
+        actions:SetHeight(22)
+        row.actions = actions
+        row.track = smallButton(actions, "Track", 62)
+        row.track:SetPoint("LEFT", actions, "LEFT", 0, 0)
+        row.track:SetScript("OnClick", function() toggleTracking(row.zone, row.taskID) end)
+        row.track:SetScript("OnEnter", function(self)
+            tooltip(self, "All Objectives", "Keep this errand in the objective tracker, even in other zones.")
+        end)
+        row.go = smallButton(actions, "Go", 36)
+        row.go:SetPoint("LEFT", row.track, "RIGHT", 3, 0)
+        row.go:SetScript("OnClick", function()
+            local task = Core.Find(row.zone, row.taskID)
+            if task and task.location then setWaypoint(task.location) end
+        end)
+        row.go:SetScript("OnEnter", function(self) tooltip(self, "Set waypoint") end)
+        row.pin = smallButton(actions, "Pin", 40)
+        row.pin:SetPoint("LEFT", row.go, "RIGHT", 3, 0)
+        row.pin:SetScript("OnClick", function() beginPlacement(row.zone, row.taskID) end)
+        row.pin:SetScript("OnEnter", function(self)
+            tooltip(self, "Place map pin", "Then click a point on this zone's map.")
+        end)
+        row.remove = smallButton(actions, "x", 24)
+        row.remove:SetPoint("RIGHT", actions, "RIGHT", 0, 0)
+        row.remove:SetScript("OnClick", function()
+            if Core.Remove(row.zone, row.taskID) then expandedID = nil; updateAll() end
+        end)
+        row.remove:SetScript("OnEnter", function(self) tooltip(self, "Remove errand") end)
+        row.down = smallButton(actions, "v", 24)
+        row.down:SetPoint("RIGHT", row.remove, "LEFT", -3, 0)
+        row.down:SetScript("OnClick", function()
+            if Core.Move(row.zone, row.taskID, 1) then updateAll() end
+        end)
+        row.down:SetScript("OnEnter", function(self) tooltip(self, "Move errand down") end)
+        row.up = smallButton(actions, "^", 24)
+        row.up:SetPoint("RIGHT", row.down, "LEFT", -3, 0)
+        row.up:SetScript("OnClick", function()
+            if Core.Move(row.zone, row.taskID, -1) then updateAll() end
+        end)
+        row.up:SetScript("OnEnter", function(self) tooltip(self, "Move errand up") end)
+        rows[index] = row
+        return row
+    end
+
+    -- Zone sub-headings, used when the map shows a continent or the world.
+    local function getZoneRow(index)
+        if zoneRows[index] then return zoneRows[index] end
+        local row = CreateFrame("Button", nil, contents)
+        row.leftPadding = 6
+        row:SetHeight(22)
+        row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        row.label = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        row.label:SetPoint("LEFT", row, "LEFT", 4, 0)
+        row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.label:SetJustifyH("LEFT")
+        row.label:SetWordWrap(false)
+        row:SetScript("OnClick", function(self)
             local id = Core.MapID(self.zone)
             if id and map.SetMapID then
-                overviewMode = false
                 map:SetMapID(id)
-                render()
-                if self.task and self.task.location then setWaypoint(self.task.location) end
             else
                 notice("Open this zone on the map once to link it to its map.")
             end
         end)
-        row:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(self.zone or "")
-            GameTooltip:AddLine("Click to open this zone on the map", 0.8, 0.7, 0.5)
-            if self.task then
-                GameTooltip:AddLine(trackingHint(self.task, self.zone), 1, 0.82, 0.25)
-            end
-            GameTooltip:Show()
-        end)
-        row:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        overviewRows[index] = row
+        row:SetScript("OnEnter", function(self) tooltip(self, self.zone or "", "Click to open this zone on the map") end)
+        row:SetScript("OnLeave", hideTooltip)
+        zoneRows[index] = row
         return row
     end
 
-    local function renderOverview()
-        local groups, total = Core.AllPending()
-        heading:SetText("All Errands")
-        subtitle:SetText(total .. " errands across " .. #groups .. " zones")
-        empty:SetShown(total == 0)
-        empty:SetText("No unfinished errands anywhere in Azeroth.")
-        for _, row in ipairs(entryRows) do row:Hide() end
-        local index, y = 0, 0
-        for _, group in ipairs(groups) do
-            index = index + 1
-            local header = overviewRow(index)
-            header.zone, header.task = group.zone, nil
-            header:SetHeight(29)
-            header:ClearAllPoints()
-            header:SetPoint("TOPLEFT", contents, "TOPLEFT", 0, -y)
-            header:SetPoint("RIGHT", contents, "RIGHT", 0, 0)
-            header.label:SetFontObject("GameFontNormal")
-            header.label:SetText(group.zone .. "  (" .. group.count .. ")")
-            header:Show()
-            y = y + 29
-            for _, task in ipairs(group.tasks) do
-                if not task.done then
+    -- Footer: add an errand, or the pin placement prompt.
+    local footer = CreateFrame("Frame", nil, contents)
+    footer.leftPadding = 10
+    footer:SetHeight(30)
+    local message = footer:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    message:SetPoint("LEFT", footer, "LEFT", 4, 0)
+    message:SetPoint("RIGHT", footer, "RIGHT", -70, 0)
+    message:SetJustifyH("LEFT")
+    local entry = CreateFrame("EditBox", nil, footer, "InputBoxTemplate")
+    entry:SetHeight(22)
+    entry:SetPoint("LEFT", footer, "LEFT", 6, 0)
+    entry:SetPoint("RIGHT", footer, "RIGHT", -60, 0)
+    entry:SetAutoFocus(false)
+    entry:SetMaxLetters(160)
+    local add = smallButton(footer, "Add", 52)
+    add:SetPoint("RIGHT", footer, "RIGHT", -2, 0)
+    local cancel = smallButton(footer, "Cancel", 62)
+    cancel:SetPoint("RIGHT", footer, "RIGHT", -2, 0)
+    cancel:SetScript("OnClick", cancelPlacement)
+    local function addTask()
+        local zone = selectedMapZone()
+        if not zone then return end
+        if Core.Add(zone, entry:GetText()) then
+            entry:SetText("")
+            entry:ClearFocus()
+            updateAll()
+        end
+    end
+    add:SetScript("OnClick", addTask)
+    entry:SetScript("OnEnterPressed", addTask)
+    entry:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    render = function()
+        local zone = selectedMapZone()
+        local id = mapID()
+        if zone and id then Core.RememberMap(zone, id) end
+        if placingID and (zone ~= placingZone or id ~= placingMapID) then
+            placingID, placingZone, placingMapID = nil, nil, nil
+        end
+        updateHeaderState()
+        for _, row in ipairs(rows) do row:Hide() end
+        for _, row in ipairs(zoneRows) do row:Hide() end
+        footer:Hide()
+
+        local pending = 0
+        local groups
+        if zone then
+            pending = Core.Pending(zone)
+        else
+            groups, pending = Core.AllPending()
+        end
+        header:SetText(pending > 0 and ("Errands (" .. pending .. ")") or "Errands")
+        header:SetWidth(width())
+        header:Show()
+
+        if not collapsed() then
+            local index, rowCount, zoneCount = 0, 0, 0
+            local function addTaskRow(task, taskZone)
+                rowCount = rowCount + 1
+                local row = getRow(rowCount)
+                row.zone, row.taskID, row.text = taskZone, task.id, task.text
+                row.tick:SetChecked(task.done)
+                row.label:SetText((task.tracked == true and "|cffffd100> |r" or "") .. task.text
+                    .. (task.location and " |cff9d9d9d[pin]|r" or ""))
+                if task.done then
+                    row.label:SetTextColor(0.5, 0.5, 0.5)
+                else
+                    row.label:SetTextColor(0.9, 0.9, 0.9)
+                end
+                local expanded = expandedID == task.id
+                row.actions:SetShown(expanded)
+                row:SetHeight(expanded and 48 or 24)
+                if expanded then
+                    local _, position, list = Core.Find(taskZone, task.id)
+                    row.track:SetText(task.tracked == true and "Untrack" or "Track")
+                    row.track:SetEnabled(not task.done)
+                    row.go:SetEnabled(task.location ~= nil)
+                    row.pin:SetText(task.location and "Move" or "Pin")
+                    row.pin:SetEnabled(taskZone == zone and not task.done)
+                    row.up:SetEnabled(position and position > 1 or false)
+                    row.down:SetEnabled(position and list and position < #list or false)
+                end
+                index = index + 1
+                place(row, index)
+            end
+            if zone then
+                for _, task in ipairs(getTasks(zone) or {}) do addTaskRow(task, zone) end
+            else
+                for _, group in ipairs(groups) do
+                    zoneCount = zoneCount + 1
+                    local zoneRow = getZoneRow(zoneCount)
+                    zoneRow.zone = group.zone
+                    zoneRow.label:SetText(group.zone .. " (" .. group.count .. ")")
                     index = index + 1
-                    local item = overviewRow(index)
-                    item.zone, item.task = group.zone, task
-                    item:SetHeight(23)
-                    item:ClearAllPoints()
-                    item:SetPoint("TOPLEFT", contents, "TOPLEFT", 0, -y)
-                    item:SetPoint("RIGHT", contents, "RIGHT", 0, 0)
-                    item.label:SetFontObject("GameFontHighlight")
-                    item.label:SetText("    " .. (task.tracked == true and "|cffffd100> |r" or "- ")
-                        .. task.text .. (task.location and "  [pin]" or ""))
-                    item:Show()
-                    y = y + 23
+                    place(zoneRow, index)
+                    for _, task in ipairs(group.tasks) do
+                        if not task.done then addTaskRow(task, group.zone) end
+                    end
                 end
             end
-            y = y + 4
-        end
-        for i = index + 1, #overviewRows do overviewRows[i]:Hide() end
-        contents:SetHeight(math.max(1, y, scroll:GetHeight()))
-        refreshScrollBar()
-    end
 
-    overviewButton:SetScript("OnClick", function()
-        overviewMode = not overviewMode
-        cancelPlacement()
-        render()
-    end)
-
-    local function createRow(i)
-        local row = CreateFrame("Frame", nil, contents)
-        row:SetHeight(rowHeight)
-        row:SetPoint("TOPLEFT", contents, "TOPLEFT", 0, -(i-1)*rowHeight)
-        row:SetPoint("RIGHT", contents, "RIGHT", 0, 0)
-        row.tick = check(row, 270)
-        row.tick:SetPoint("TOPLEFT", row, "TOPLEFT", -2, -2)
-        row.tick.label:ClearAllPoints()
-        row.tick.label:SetPoint("LEFT", row.tick, "RIGHT", 0, 0)
-        row.tick.label:SetPoint("RIGHT", row, "RIGHT", -5, 0)
-        row.tick.label:SetJustifyH("LEFT")
-        row.tick.label:SetFontObject(_G.QuestFont and "QuestFont" or "GameFontHighlight")
-        row.tick:SetScript("OnClick", function(self)
-            if IsShiftKeyDown and IsShiftKeyDown() then
-                local task = Core.Find(currentMapZone, row.taskID)
-                if task then self:SetChecked(task.done) end
-                toggleTracking(currentMapZone, row.taskID)
-            elseif Core.SetDone(currentMapZone, row.taskID, self:GetChecked()) then
-                updateAll()
-            end
-        end)
-        -- WoW checkboxes do not include their adjacent FontString in the hit
-        -- rectangle. An invisible text button makes Shift-click work on the
-        -- actual errand name, just like Shift-clicking a quest in the log.
-        row.nameButton = CreateFrame("Button", nil, row)
-        row.nameButton:SetPoint("TOPLEFT", row, "TOPLEFT", 27, -1)
-        row.nameButton:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -1)
-        row.nameButton:SetHeight(23)
-        row.nameButton:SetScript("OnClick", function()
-            local task = Core.Find(currentMapZone, row.taskID)
-            if not task then return end
-            if IsShiftKeyDown and IsShiftKeyDown() then
-                toggleTracking(currentMapZone, row.taskID)
-            elseif Core.SetDone(currentMapZone, row.taskID, not task.done) then
-                updateAll()
-            end
-        end)
-        local function trackingTooltip(control)
-            local task = Core.Find(currentMapZone, row.taskID)
-            if not task then return end
-            GameTooltip:SetOwner(control, "ANCHOR_RIGHT")
-            GameTooltip:SetText(task.text)
-            GameTooltip:AddLine("Click to toggle completion", 0.8, 0.7, 0.5)
-            if not task.done then
-                GameTooltip:AddLine(trackingHint(task, currentMapZone), 1, 0.82, 0.25)
-            end
-            GameTooltip:Show()
-        end
-        row.tick:SetScript("OnEnter", trackingTooltip)
-        row.tick:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        row.nameButton:SetScript("OnEnter", trackingTooltip)
-        row.nameButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        row.pin = button(row, "Pin", 49, 20)
-        row.pin:SetPoint("TOPLEFT", row, "TOPLEFT", 28, -28)
-        row.pin:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        row.pin:SetScript("OnClick", function(_, which)
-            local task = Core.Find(currentMapZone, row.taskID)
-            if not task then return end
-            if task.location and which ~= "RightButton" then
-                setWaypoint(task.location)
+            message:SetTextColor(INK_R, INK_G, INK_B)
+            if placingID then
+                message:SetText("Click the map to place the pin.")
+                message:Show(); cancel:Show(); entry:Hide(); add:Hide()
+            elseif zone then
+                message:Hide(); cancel:Hide(); entry:Show(); add:Show()
             else
-                beginPlacement(currentMapZone, row.taskID)
+                message:SetText(pending == 0 and "No unfinished errands. Open a zone to add one."
+                    or "Open a zone on the map to add errands.")
+                message:Show(); cancel:Hide(); entry:Hide(); add:Hide()
             end
-        end)
-        row.pin:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            local task = Core.Find(currentMapZone, row.taskID)
-            GameTooltip:SetText(task and task.location and "Map waypoint" or "Place map pin")
-            if task and task.location then
-                GameTooltip:AddLine("Left-click: set waypoint. Right-click: move pin.", 0.8, 0.7, 0.5, true)
-            else
-                GameTooltip:AddLine("Click a point on the zone map after selecting Pin.", 0.8, 0.7, 0.5, true)
-            end
-            GameTooltip:Show()
-        end)
-        row.pin:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-        -- Keep the reorder controls next to Remove, on the right side of the
-        -- second row: [Pin]                         [^] [v] [x].
-        row.remove = button(row, "x", 24, 20)
-        row.remove:SetPoint("TOPRIGHT", row, "TOPRIGHT", -2, -28)
-        row.remove:SetScript("OnClick", function()
-            if Core.Remove(currentMapZone, row.taskID) then updateAll() end
-        end)
-        row.down = button(row, "v", 24, 20)
-        row.down:SetPoint("RIGHT", row.remove, "LEFT", -3, 0)
-        row.down:SetScript("OnClick", function()
-            if Core.Move(currentMapZone, row.taskID, 1) then updateAll() end
-        end)
-        row.up = button(row, "^", 24, 20)
-        row.up:SetPoint("RIGHT", row.down, "LEFT", -3, 0)
-        row.up:SetScript("OnClick", function()
-            if Core.Move(currentMapZone, row.taskID, -1) then updateAll() end
-        end)
-        for _, control in ipairs({ row.up, row.down, row.remove }) do
-            control:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                if self == row.up then GameTooltip:SetText("Move errand up")
-                elseif self == row.down then GameTooltip:SetText("Move errand down")
-                else GameTooltip:SetText("Remove errand") end
-                GameTooltip:Show()
-            end)
-            control:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            index = index + 1
+            place(footer, index)
         end
-        entryRows[i] = row
-    end
-    render = function()
-        if not mapPanel:IsShown() then return end
-        currentMapID = mapID()
-        currentMapZone = selectedMapZone()
-        if currentMapZone and currentMapID then Core.RememberMap(currentMapZone, currentMapID) end
-        overviewButton:SetText(overviewMode and "Zone" or "All zones")
-        scroll:ClearAllPoints()
-        scroll:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", 6, -7)
-        scroll:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -42, overviewMode and 18 or 96)
-        contents:SetWidth(math.max(1, scroll:GetWidth()))
-        local showEntry = not overviewMode and not placingID
-        footerLabel:SetShown(not overviewMode)
-        entry:SetShown(showEntry)
-        add:SetShown(showEntry)
-        placeCancel:SetShown(placingID ~= nil and not overviewMode)
-        if overviewMode then
-            renderOverview()
-            refreshPins()
-            return
-        end
-        for _, row in ipairs(overviewRows) do row:Hide() end
-        heading:SetText(currentMapZone or "Choose a zone")
-        local tasks = currentMapZone and getTasks(currentMapZone) or nil
-        local count = tasks and #tasks or 0
-        local unfinished = 0
-        for i = 1, count do if not tasks[i].done then unfinished = unfinished + 1 end end
-        if not currentMapZone then
-            subtitle:SetText("Select a zone on the map")
-            empty:SetText("Select a zone on the map to manage its errands.")
-        else
-            subtitle:SetText(unfinished == 1 and "1 unfinished errand" or (unfinished .. " unfinished errands"))
-            empty:SetText("No errands yet. Add one below.")
-        end
-        entry:SetEnabled(currentMapZone ~= nil)
-        add:SetEnabled(currentMapZone ~= nil)
-        empty:SetShown(count == 0)
-        for i = 1, count do
-            if not entryRows[i] then createRow(i) end
-            local row = entryRows[i]
-            local task = tasks[i]
-            row.taskID = task.id
-            row.tick:SetChecked(task.done)
-            row.tick.label:SetText((task.tracked == true and "|cffffd100> |r" or "")
-                .. task.text)
-            local value = task.done and 0.45 or 0.25
-            row.tick.label:SetTextColor(value, task.done and 0.34 or 0.16, task.done and 0.23 or 0.08)
-            row.tick.label:SetShadowColor(0, 0, 0, 0)
-            row.pin:SetText(task.location and "Go" or "Pin")
-            row.up:SetEnabled(i > 1)
-            row.down:SetEnabled(i < count)
-            row:Show()
-        end
-        for i = count+1, #entryRows do entryRows[i]:Hide() end
-        contents:SetHeight(math.max(1, count*rowHeight, scroll:GetHeight()))
-        refreshScrollBar()
+        if contents.Layout then contents:Layout() end
         refreshPins()
     end
-    mapPanel.render = render
+    section.render = render
+    section.toggle = toggleCollapsed
+    section.expand = function()
+        if collapsed() then toggleCollapsed() else render() end
+    end
 
-    -- Precisely the same tab button template and icon placement as Zone Lore.
-    local tabOK, tab = pcall(CreateFrame, "Frame", "WoWErrandsMapTab", UIParent, "LargeSideTabButtonTemplate")
-    if tabOK and tab and tab.Icon and tab.Icon.SetTexture and tab.SetCustomOnMouseUpHandler then
-        mapTab = tab
-        mapTab.fillToInterior = true
-        mapTab.tooltipText = "Show Zone Errands"
-        mapTab.Icon:SetTexture("Interface\\AddOns\\WoWErrands\\icon")
-        if mapTab.SetChecked then mapTab:SetChecked(false) end
-        mapTab:SetCustomOnMouseUpHandler(function()
-            mapTab:Hide()
-            mapPanel:Show()
-        end)
-    else
-        mapTab = CreateFrame("Button", "WoWErrandsMapTab", UIParent)
-        mapTab:SetSize(40, 40)
-        local glyph = mapTab:CreateTexture(nil, "ARTWORK")
-        glyph:SetAllPoints()
-        glyph:SetTexture("Interface\\AddOns\\WoWErrands\\icon")
-        glyph:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        local border = mapTab:CreateTexture(nil, "OVERLAY")
-        border:SetTexture([[Interface\Buttons\UI-Quickslot2]])
-        border:SetSize(74, 74)
-        border:SetPoint("CENTER")
-        mapTab:SetPushedTexture([[Interface\Buttons\UI-Quickslot-Depress]])
-        mapTab:SetHighlightTexture([[Interface\Buttons\ButtonHilight-Square]], "ADD")
-        mapTab:SetScript("OnClick", function()
-            mapTab:Hide()
-            mapPanel:Show()
-        end)
-        mapTab:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Show Zone Errands")
-            GameTooltip:Show()
-        end)
-        mapTab:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    if hooksecurefunc and type(_G.QuestLogQuests_Update) == "function" then
+        hooksecurefunc("QuestLogQuests_Update", render)
     end
-    mapTab:SetScript("OnHide", function(self)
-        if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
-    end)
+    scrollFrame:HookScript("OnShow", render)
 
-    local function place()
-        local parent = host()
-        if mapPanel:GetParent() ~= parent then mapPanel:SetParent(parent) end
-        if mapTab:GetParent() ~= parent then mapTab:SetParent(parent) end
-    end
-    local function matchMapAppearance()
-        local strata, level = map:GetFrameStrata(), map:GetFrameLevel()
-        local mapScale, uiScale = map:GetEffectiveScale(), UIParent:GetEffectiveScale()
-        for _, element in ipairs({mapPanel, mapTab}) do
-            if strata then element:SetFrameStrata(strata) end
-            if level then element:SetFrameLevel(level+10) end
-            if element:GetParent() == map then
-                element:SetScale(1)
-                element:SetAlpha(1)
-            elseif mapScale and uiScale and uiScale > 0 then
-                element:SetScale(mapScale/uiScale)
-                element:SetAlpha(map:GetAlpha() or 1)
-            end
-        end
-    end
-    local function positionPanel()
-        place()
-        mapPanel:SetWidth(widthToMatch())
-        mapPanel:ClearAllPoints()
-        local lore = lorePanel()
-        if lore then
-            mapPanel:SetPoint("TOPLEFT", lore, "TOPRIGHT", 2, 0)
-            mapPanel:SetPoint("BOTTOMLEFT", lore, "BOTTOMRIGHT", 2, 0)
-        else
-            mapPanel:SetPoint("TOPLEFT", map, "TOPRIGHT", 2, 0)
-            mapPanel:SetPoint("BOTTOMLEFT", map, "BOTTOMRIGHT", 2, 0)
-        end
-        matchMapAppearance()
-    end
-    mapPanel.positionPanel = positionPanel
-    local function positionTab()
-        place()
-        mapTab:ClearAllPoints()
-        local lore = lorePanel()
-        if lore then
-            -- When Zone Lore is open, the tab extends from the outermost panel.
-            mapTab:SetPoint("TOPLEFT", lore, "TOPRIGHT", 0, -30)
-        else
-            -- When both are collapsed, follow Spoken's exact side-tab anchor
-            -- and sit below it, joined to the same map-edge metal artwork.
-            local loreToggle = _G.SpokenZonesPanelToggle
-            if loreToggle and loreToggle.GetHeight then
-                mapTab:SetPoint("TOPLEFT", loreToggle, "BOTTOMLEFT", 0, -2)
-            else
-                mapTab:SetPoint("TOPLEFT", map, "TOPRIGHT", 0, -104)
-            end
-        end
-        matchMapAppearance()
-    end
-    mapTab.positionTab = positionTab
-    local function syncTab()
-        if canShow() and not mapPanel:IsShown() then
-            positionTab()
-            mapTab:Show()
-        else
-            mapTab:Hide()
-        end
-    end
-    mapTab.sync = syncTab
-    mapPanel:HookScript("OnShow", function()
-        positionPanel()
-        syncTab()
-        render()
-    end)
-    mapPanel:HookScript("OnHide", syncTab)
-
-    -- Only re-check explicit public map and Spoken frame references. Do not use
-    -- EnumerateFrames()/FontString:GetText(), which caused the secret-string error.
+    -- Re-render when the map changes zones; this driver only runs while the
+    -- map is open and never inspects Blizzard frame text.
+    local driver = CreateFrame("Frame", nil, map)
     local elapsed, priorMapID = 0, nil
-    mapPanel:SetScript("OnUpdate", function(_, dt)
+    driver:SetScript("OnUpdate", function(_, dt)
         elapsed = elapsed + dt
         if elapsed < 0.25 then return end
         elapsed = 0
-        if not canShow() then
-            mapPanel:Hide()
-            return
-        end
-        positionPanel()
-        local mapID = map.GetMapID and map:GetMapID() or map.mapID
-        if mapID ~= priorMapID then
-            priorMapID = mapID
-            if placingID then cancelPlacement() end
+        local id = mapID()
+        if id ~= priorMapID then
+            priorMapID = id
+            expandedID = nil
             render()
         end
-    end)
-    local tabElapsed = 0
-    mapTab:SetScript("OnUpdate", function(self, dt)
-        if not canShow() or mapPanel:IsShown() then self:Hide(); return end
-        tabElapsed = tabElapsed + dt
-        if tabElapsed > 0.3 then
-            tabElapsed = 0
-            positionTab()
-            refreshPins()
-        end
-    end)
-    map:HookScript("OnShow", function()
-        if canShow() then
-            positionPanel()
-            mapPanel:Show()
-            render()
-        end
-        syncTab()
     end)
     map:HookScript("OnHide", function()
-        cancelPlacement()
+        placingID, placingZone, placingMapID = nil, nil, nil
         for _, pin in pairs(mapPins) do pin:Hide() end
-        mapPanel:Hide()
-        mapTab:Hide()
     end)
-    map:HookScript("OnSizeChanged", function()
-        if not canShow() then
-            mapPanel:Hide()
-            mapTab:Hide()
-        elseif mapPanel:IsShown() then
-            positionPanel()
-        elseif not mapTab:IsShown() then
-            -- A minimised world map should open the panel, unless the user
-            -- deliberately folded it to a tab earlier in this map session.
-            positionPanel()
-            mapPanel:Show()
-        else
-            syncTab()
-        end
-    end)
-    if hooksecurefunc then
-        hooksecurefunc(map, "SetAlpha", function()
-            if mapPanel and mapPanel:GetParent() ~= map then
-                local alpha = map:GetAlpha() or 1
-                mapPanel:SetAlpha(alpha)
-                mapTab:SetAlpha(alpha)
-            end
-        end)
-    end
-    mapTab:Hide()
-    mapPanel:Hide()
-    if canShow() then
-        positionPanel()
-        mapPanel:Show()
-        render()
-    end
+    render()
+    return true
 end
 
 updateAll = function()
     -- The tracker is the only zone-arrival UI; no extra popup is created.
     if trackerRegistered and tracker then tracker:MarkDirty() end
-    if mapPanel and mapPanel:IsShown() then mapPanel.render() end
+    if questLog then questLog.render() end
 end
 
 local function changeZone()
@@ -1337,12 +803,21 @@ addon:SetScript("OnEvent", function(self, event, ...)
         db()
         -- Register the native module once Blizzard has initialized the tracker.
         -- PLAYER_ENTERING_WORLD may occur before its manager Init callback.
-        buildMapPanel()
+        if not buildQuestLogSection() and UIParentLoadAddOn then
+            -- The world map may be load-on-demand; build once it is loaded.
+            pcall(UIParentLoadAddOn, "Blizzard_WorldMap")
+            buildQuestLogSection()
+        end
         SLASH_WOWERRANDS1 = "/we"
         SLASH_WOWERRANDS2 = "/wowerrands"
         SlashCmdList.WOWERRANDS = function()
             if WorldMapFrame and WorldMapFrame:IsShown() then
-                if mapPanel then mapPanel:SetShown(not mapPanel:IsShown()) end
+                if questLog then questLog.toggle() end
+                return
+            end
+            if questLog then questLog.expand() end
+            if OpenQuestLog then
+                OpenQuestLog()
             elseif ToggleWorldMap then
                 ToggleWorldMap()
             elseif WorldMapFrame then

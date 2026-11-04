@@ -16,16 +16,17 @@ WHAT IT DOES
 - In All Objectives, unfinished errands for the current zone appear automatically,
   and manually tracked errands from other zones stay visible. Left-click an
   errand to complete it manually; Shift-click to set a waypoint if it has a pin.
-- Opening Map & Quest Log shows the Zone Errands panel. It is placed beside
-  Zone Lore where possible and can be collapsed into a map-edge clipboard tab.
-- The map panel uses the same Forever panel template and original parchment
-  art from Spoken Zones when that addon is available.
+- Map & Quest Log shows a collapsible Errands category in the quest log,
+  below your quests, for the zone selected on the map. Click the Errands
+  header to collapse or expand it.
+- Everything works with plain clicks, so the gamepad cursor can use it too.
 
 MAP PINS AND WAYPOINTS
 - Select a zone on the world map and add an errand.
-- Click Pin beside that errand, then click its location on the zone map.
-- Click the map pin itself or use Go beside the errand to set a Blizzard waypoint.
-- Right-click Go to replace an existing pin. Use Cancel while placing a pin.
+- Click the errand's name to show its actions, click Pin, then click its
+  location on the zone map. Use Cancel while placing a pin.
+- Click the map pin itself or use Go in the errand's actions to set a waypoint.
+- Use Move in the errand's actions to replace an existing pin.
 - The game only allows waypoints on maps supported by C_Map.
 
 MANUAL COMPLETION
@@ -33,27 +34,25 @@ MANUAL COMPLETION
   rules are evaluated in this version. Previously configured rules are inactive.
 
 REORDER AND OVERVIEW
-- Use ^ and v beside the x (Remove) button to move an errand up or down. That order also
-  applies to the native All Objectives section.
-- SHIFT-click an errand's name or checkbox in the Zone Errands map panel
-  to track it persistently in All Objectives, even when you leave the zone.
-  SHIFT-click again to untrack it. The same shortcut works in All zones.
+- Use ^ and v beside the x (Remove) button in an errand's actions to move it
+  up or down. That order also applies to the native All Objectives section.
+- Click Track in an errand's actions (or SHIFT-click its name) to track it
+  persistently in All Objectives, even when you leave the zone. Click
+  Untrack to stop tracking it.
 - New/previous errands appear automatically while in their zone, unless
   explicitly untracked; tracking preferences are saved per character.
-- Click All zones in the Zone Errands panel to see a grouped list of all
-  unfinished errands across Azeroth. Click a zone or errand to open its map.
+- When the map shows a continent or the world, the Errands category lists
+  unfinished errands across Azeroth grouped by zone. Click a zone to open it.
 - Existing errands from older versions have no map ID until a zone is opened
   in the map or can be resolved through C_Map's zone catalog.
 
 COMMANDS
-/we or /wowerrands  Open the map-based Zone Errands panel.
+/we or /wowerrands  Open the quest log with Errands expanded.
 
 DESIGN AND DEPENDENCIES
 Special thanks to rustykey, author of Spoken (Spoken Player), whose Zone Lore
-interface inspired the copper and parchment design. Spoken_Zones is optional.
-Where installed, its artwork is used at runtime to match Zone Lore; its
-original art is not redistributed in this ZIP. Without Spoken, WoWErrands
-uses a bundled parchment fallback and Blizzard frames.
+interface inspired the earlier design. Spoken_Zones is optional; the Errands
+category now uses the native quest log frames.
 
 COMPATIBILITY
 Target: WoW Forever 1.60.1 (Interface 16001, Camelot). Client APIs may

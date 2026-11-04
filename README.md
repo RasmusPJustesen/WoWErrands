@@ -8,8 +8,8 @@ Remember why you traveled to a zone: visit a profession trainer, pick up a quest
 
 - **Zone-entry checklist:** Opens when you enter a zone with unfinished errands.
 - **Native objective tracker section:** Displays a collapsible **Errands** group inside **All Objectives**, alongside Quests and Professions.
-- **Map-side editor:** Manage errands for the zone selected on the world map.
-- **Zone Lore-inspired styling:** WoW-style parchment, borders and side-tab controls. When **Spoken Zones** is installed, the map panel can reference the same parchment artwork for a closer visual match.
+- **Quest log category:** A collapsible **Errands** category in the world map's quest log, on the same level as your quests, for the zone selected on the map.
+- **Gamepad friendly:** Every action is a plain click, so the quest log section works with the gamepad cursor.
 - **Per-character lists:** Saved between sessions using WoW's SavedVariables.
 - **In-game editing:** Add, complete and remove errands without editing files.
 
@@ -22,17 +22,21 @@ Remember why you traveled to a zone: visit a profession trainer, pick up a quest
 
 ### Optional dependency
 
-[Spoken Zones](https://github.com/rusty-key/spoken-wow) is optional, but recommended if you want the map panel to match its **Zone Lore** design. WoWErrands runs without it using fallback artwork.
+[Spoken Zones](https://github.com/rusty-key/spoken-wow) is optional, but no longer used by the Errands section, which now lives in the native quest log.
 
 ## Using WoWErrands
 
-Open your world map to edit the errands belonging to the selected zone. The **Zone Errands** side panel can be collapsed into a tab attached to the map edge.
+Open your world map and its quest log. Below your quests, the collapsible **Errands** category lists the errands of the zone selected on the map (or all zones with unfinished errands when viewing a continent).
+
+- Tick the checkbox to complete an errand.
+- Click an errand's name to show its actions: **Track** in All Objectives, **Go** (set waypoint), **Pin** a location on the map, reorder (**^**/**v**) or remove (**x**). Shift-click still toggles tracking.
+- Type into the box at the bottom of the category and press **Add**.
 
 Entering a zone with incomplete errands brings up the checklist. The same pending errands can be viewed in **All Objectives > Errands**.
 
 Chat shortcuts are available if needed:
 
-- `/we` or `/wowerrands`: Open the map and Zone Errands interface.
+- `/we` or `/wowerrands`: Open the quest log with the Errands category expanded (or collapse/expand it when the map is open).
 
 ## Compatibility
 
